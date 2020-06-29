@@ -8,7 +8,7 @@ from sklearn.metrics.pairwise import haversine_distances
 
 EARTH_RADIUS = 6371000
 
-def linestrings_to_df(linestring):
+def linestrings_to_df(linestring, sample_ratio=1):
     """ Convert a pandas Series of linestrings into a pandas DataFrame with all
         individual data points
     """
@@ -19,6 +19,14 @@ def linestrings_to_df(linestring):
     for i, ln_str in enumerate(linestring):
         values = list(linestring[i].coords)
         longitude, latitude = zip(*values)
+        longitude = np.array(longitude)
+        latitude = np.array(latitude)
+        
+        if sample_ratio < 1:
+            sample_idx = np.random.randint(
+                0, len(longitude), int(np.ceil(sample_ratio * len(longitude))))
+            longitude = longitude[sample_idx]
+            latitude = latitude[sample_idx]
         
         longitude_full.extend(list(longitude))
         latitude_full.extend(list(latitude))
@@ -51,13 +59,14 @@ def find_closest_ll(input_ll, reference_ll, n=1):
     _ , indices = nbrs.kneighbors(
         input_ll[['longitude', 'latitude']].values)
     
-    input_ll['longitude'] = input_ll['longitude'].apply(radians)
-    input_ll['latitude'] = input_ll['latitude'].apply(radians)
-    loc_1 = input_ll[['longitude', 'latitude']]
+    input_ll['longitude_rad'] = input_ll['longitude'].apply(radians)
+    input_ll['latitude_rad'] = input_ll['latitude'].apply(radians)
+    loc_1 = input_ll[['longitude_rad', 'latitude_rad']]
     
-    reference_ll['longitude'] = reference_ll['longitude'].apply(radians)
-    reference_ll['latitude'] = reference_ll['latitude'].apply(radians)
-    loc_2 = reference_ll.iloc[indices.flatten()][['longitude', 'latitude']]
+    reference_ll['longitude_rad'] = reference_ll['longitude'].apply(radians)
+    reference_ll['latitude_rad'] = reference_ll['latitude'].apply(radians)
+    loc_2 = reference_ll.iloc[indices.flatten()][['longitude_rad',
+                                                  'latitude_rad']]
     
     distances = np.array([])
     for l1, l2 in zip(loc_1.values, loc_2.values):
