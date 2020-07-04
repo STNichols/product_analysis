@@ -74,5 +74,3 @@ def find_closest_ll(input_ll, reference_ll, n=1):
         distances = np.append(distances, np.max(d))
     
     return distances, indices
-    
-    
