@@ -6,7 +6,8 @@ Created on Sun Aug  2 18:29:56 2020
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+import plotly.graph_objects as go
 
 class vehicle():
     """ This is a vehicle that will assist in the calculation of cost of
@@ -51,56 +52,103 @@ class vehicle():
         if self.energy_ppm is not None:
             self.moving_ppm = self.maintenance_ppm + self.energy_ppm
         
-    def cost_of_ownership(self, years=None):
+    def cost_at_year(self, year=None):
         """ Calculating the cost of ownership of the vehicle
         
         Args:
-            years (int/float/numpy.array): Year value to calculate the cost at
+            year (int/float/numpy.array): Year value to calculate the cost at
             
         Returns:
             (numpy.array): Total cost of ownership over years
         """
         
-        if years is None:
+        if year is None:
             return np.array([self.vehicle_price +
                              (self.moving_ppm * self.mileage)])
         else:
-            if isinstance(years, int) or isinstance(years, float):
-                years = np.array([years])
-            mpy = self.miles_per_year * years
+            if isinstance(year, int) or isinstance(year, float):
+                year = np.array([year])
+            mpy = self.miles_per_year * year
             if self.payment_duration is None:
-                return (self.vehicle_ppm + self.moving_ppm) * mpy
+                return np.array([(self.vehicle_ppm + self.moving_ppm) * mpy])
             else:
-                percent_paid = years / self.payment_duration
+                percent_paid = year / self.payment_duration
                 percent_paid = np.min(np.vstack(
-                    [percent_paid,np.ones(len(percent_paid))]), axis=0)
-                return ((self.vehicle_price * percent_paid) +
-                        (self.moving_ppm * mpy))
+                    [percent_paid, np.ones(len(percent_paid))]), axis=0)
+                return np.array([((self.vehicle_price * percent_paid) +
+                        (self.moving_ppm * mpy))])
             
-    def plot_cost_of_ownership(self, years, ax=None):
-        """ Plot the total cost of ownership over the years"""
+    def cost_of_ownership(self, years):
+        """ Calculating the cost of ownership over the years """
         
-        if ax is None:
-            fig, ax = plt.subplots()
-        ax.plot(years, self.cost_of_ownership(years), '.-', label=self.type)
+        years = np.arange(years * 12 + 1) / 12
+
+        for year in years:
+            if year == years[0]:
+                coo_stack = self.cost_at_year(year)
+                continue
+            coo_stack = np.vstack((coo_stack, self.cost_at_year(year)))
+
+        df = pd.DataFrame(data=np.vstack((years, coo_stack.mean(axis=1))).T,
+            columns=['year', 'cost_mean'])
+        
+        # Aggregate the cost variation into columns
+        if coo_stack.shape[1] > 1:
+            df['cost_min'] = coo_stack.min(axis=1)
+            df['cost_max'] = coo_stack.max(axis=1)
+        return df
+
+    def plot_cost_of_ownership(self, years, fig=None):
+        """ Plot cost of ownership up to the years provided """
+
+        if fig is None:
+            fig = go.Figure()
+
+        coo = self.cost_of_ownership(years)
+
+        fig.add_trace(go.Scatter(x=coo['year'], y=coo['cost_mean'],
+            mode='lines+markers', name='Mean Cost',
+            line_color=self.colors[0]))
+
+        if ('cost_min' in coo) and ('cost_max' in coo):
+            fig.add_trace(go.Scatter(x=coo['year'], y=coo['cost_min'],
+                    fill=None, mode='lines', line_color=self.colors[1]))
+            fig.add_trace(go.Scatter(x=coo['year'], y=coo['cost_max'],
+                    fill='tonexty', mode='lines', line_color=self.colors[1]))
+
+        return fig
         
 class ice_vehicle(vehicle):
     """ This is an internal combustion vehicle with assistance in calculating
     the cost of ownership parameters
     """
     
-    def __init__(self, price_tag, mpg, payment_duration=None):
+    def __init__(self, price_tag, mpg, payment_duration=None, name=None):
         super(ice_vehicle, self).__init__(price_tag,
                                           payment_duration=payment_duration)
-        self.type = 'ICE Vehicle'
-        self.gas_price_per_gallon = 2.50
-        self.miles_per_gallon = mpg
-        
-        self.energy_ppm = self.gas_price_per_gallon / self.miles_per_gallon
+        if name is None:
+            self.name = 'ICE Vehicle'
+        else:
+            self.name = name
         
         # Add in oil changes, $40 per 5,000 miles
         self.add_maintenance_cost(40, 5000)
+        
         # Add the energy cost into the moving price per miles
+        self.miles_per_gallon = mpg
+        self.update_energy_ppm(2.50)
+
+        # Color set
+        self.colors = ['darkred', 'red', 'lightsalmon', 'orangered']
+
+    def update_energy_ppm(self, gas_cost):
+        """ Updating the energy price for a gas vehicle per mile """
+
+        if isinstance(gas_cost, int) or isinstance(gas_cost, float):
+            gas_cost = np.array([gas_cost])
+        self.gas_price_per_gallon = gas_cost
+        self.energy_ppm = self.gas_price_per_gallon / self.miles_per_gallon
+
         self.add_energy_cost()
         
 class electric_vehicle(vehicle):
@@ -109,23 +157,28 @@ class electric_vehicle(vehicle):
     """
     
     def __init__(self, price_tag, battery_size_kwh, range_mi,
-                 payment_duration=None):
+                 payment_duration=None, name=None):
         super(electric_vehicle, self).__init__(price_tag,
                                          payment_duration=payment_duration)
-        self.type = 'Electric Vehicle'
+        if name is None:
+            self.name = 'Electric Vehicle'
+        else:
+            self.name = name
         self.range = range_mi
         self.battery_size = battery_size_kwh
         self.update_energy_ppm(0.13) # Default to $0.13 per kwh
-        
-        # Add the energy cost into the moving price per miles
-        self.add_energy_cost()
+
+        # Color set
+        self.colors = ['darkseagreen', 'green', 'limegreen', 'lightseagreen']
         
     def update_energy_ppm(self, electricity_cost):
-        """ Updating the energy price of traveling per mile"""
+        """ Updating the energy price of traveling per mile """
         
+        if (isinstance(electricity_cost, int) or
+            isinstance(electricity_cost, float)):
+            electricity_cost = np.array([electricity_cost])
         self.price_per_kwh = electricity_cost
         self.miles_per_kwh = self.range / self.battery_size
         self.energy_ppm = self.price_per_kwh / self.miles_per_kwh
         
-        self.add_energy_cost()
-        
+        self.add_energy_cost() 
